@@ -1,5 +1,7 @@
 import os
 import json
+from typing import Dict, Tuple, List, Any, Optional
+
 import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -68,7 +70,7 @@ class VectorIndexBuilder:
         print(f"表 {table} 的索引已保存: {index_file}")
         print(f"表 {table} 的记录已保存: {records_file}")
 
-    def update_index_incremental(self, table: str, new_records: list = None):
+    def update_index_incremental(self, table: str, new_records: list = None) -> Optional[Tuple[faiss.Index, List[Dict[str, Any]]]]:
         """
         增量更新指定表的向量索引
         
@@ -86,7 +88,7 @@ class VectorIndexBuilder:
         if not os.path.exists(index_file) or not os.path.exists(records_file):
             print(f"索引文件不存在，构建完整索引...")
             self._build_table_index(table)
-            return
+            return None
         
         # 加载现有索引和记录
         try:
@@ -96,7 +98,7 @@ class VectorIndexBuilder:
         except Exception as e:
             print(f"加载现有索引失败: {e}，重新构建完整索引...")
             self._build_table_index(table)
-            return
+            return None
         
         # 如果没有提供新记录，则从数据库获取所有记录（相当于重建索引）
         if new_records is None:
@@ -106,7 +108,7 @@ class VectorIndexBuilder:
             # 检查是否需要更新（简单的记录数比较）
             if len(existing_records) == len(new_records):
                 print("记录数未发生变化，跳过更新")
-                return
+                return None
         
         # 确定需要添加的新记录
         existing_ids = {record[TABLE_PK_MAP[table]] for record in existing_records}
@@ -117,7 +119,7 @@ class VectorIndexBuilder:
         
         if not records_to_add:
             print("没有需要添加的新记录")
-            return
+            return None
             
         print(f"发现 {len(records_to_add)} 条新记录需要添加")
         
@@ -130,7 +132,7 @@ class VectorIndexBuilder:
         
         if not texts:
             print("没有有效的文本内容需要向量化")
-            return
+            return None
             
         # 向量化新记录
         print(f"正在向量化 {len(texts)} 条新记录...")
@@ -149,18 +151,22 @@ class VectorIndexBuilder:
             pickle.dump(existing_records, f)
             
         print(f"表 {table} 的索引已更新，当前共有 {len(existing_records)} 条记录")
+        return index, existing_records
 
-    def update_all_indexes_incremental(self):
+    def update_all_indexes_incremental(self) -> Dict[str, Tuple[faiss.Index, List[Dict[str, Any]]]]:
         """增量更新所有表的向量索引"""
         print("开始增量更新所有表的向量索引...")
-        
+        updated: Dict[str, Tuple[faiss.Index, List[Dict[str, Any]]]] = {}
         for table in TABLE_PK_MAP.keys():
             print(f"正在处理表: {table}")
             # 获取当前表的所有记录用于增量更新
             current_records = self.db.get_all_records(table)
-            self.update_index_incremental(table, current_records)
-        
+            pair = self.update_index_incremental(table, current_records)
+            if pair is not None:
+                updated[table] = pair
         print("所有表的向量索引增量更新完成")
+        return updated
+
 
 def main():
     """主函数，用于构建所有表的向量索引"""

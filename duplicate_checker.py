@@ -14,12 +14,15 @@ except ImportError:
 
 from db_client import DBClient, TABLE_PK_MAP
 from llm_client import LLMClient
+from vector_index_builder import VectorIndexBuilder
 
 class DuplicateChecker:
     def __init__(self, db: DBClient, llm: LLMClient):
         self.db = db
         self.llm = llm
         self.index_dir = "vector_indexes"
+        # 创建索引构建器
+        self.builder = VectorIndexBuilder(db)
         
         if VECTOR_SIMILARITY_AVAILABLE:
             # 初始化句子转换模型
@@ -117,6 +120,43 @@ class DuplicateChecker:
         else:
             return fuzz.token_sort_ratio(str(text1), str(text2))
 
+    def ensure_singleTarget_in_index(self, table: str, target_id: int, row: dict | None = None, text_cols: list[str] | None = None):
+        """若已有该表索引，则确保目标记录已被增量追加；若缺依赖则直接跳过。"""
+        if not VECTOR_SIMILARITY_AVAILABLE:
+            return  # 回退路径下不做索引维护
+        pair = self.vector_indexes.get(table)  # 返回table表的元组 (index, records)
+        if not pair or pair[0] is None:
+            return  # 没有已载入索引就不动，build_vector_index 会重建
+        index, records = pair
+        pk_name = TABLE_PK_MAP[table]
+        if any(str(r[pk_name]) == str(target_id) for r in records):
+            return  # 已存在向量索引，直接返回
+
+        parts = [str(row[c]) for c in text_cols if row.get(c)]  # 拼成一个单一的字符串，供后续向量化使用
+        joined = " ".join(parts).strip()
+        if not joined:
+            return
+
+        vec = self.model.encode([joined])[0].astype(np.float32, copy=False)
+        faiss.normalize_L2(vec.reshape(1, -1))
+        index.add(vec.reshape(1, -1))  # index 是一个 FAISS 向量索引对象，这里直接添加新向量
+        # 只向内存 records 追加一条字典行，字段用于后续 LLM 细筛无需改动
+        new_row = {pk_name: target_id}  # 一条用于内存维护的记录字典，用来和索引里的向量一一对应，包含主键和需要的文本字段
+        for c in text_cols:
+            new_row[c] = row.get(c)
+        records.append(new_row)
+        self.vector_indexes[table] = (index, records)
+
+    def alreadyExist(self, table: str, target_id: int):
+        """判断目标记录是否已在索引中"""
+        pair = self.vector_indexes.get(table)  # 返回table表的元组 (index, records)
+        if not pair or pair[0] is None:
+            return  # 没有已载入索引就不动，build_vector_index 会重建
+        index, records = pair
+        pk_name = TABLE_PK_MAP[table]
+        if any(str(r[pk_name]) == str(target_id) for r in records):
+            return True  # 已存在向量索引，直接返回
+        return False
 
     def check_duplicates(self, target_id: int, target_type: str) -> Dict[str, Any]:
         result = {"code": 100, "msg": "success", "bizType": None, "bizContent": {"similarDemands": []}}
@@ -124,15 +164,17 @@ class DuplicateChecker:
         target_record = self.db.get_record_by_id(target_type, target_id)
         if not target_record:
             return {"code": 404, "msg": f"No record found in {target_type} with id={target_id}"}
-
         target_text_cols = self.db.get_text_columns(target_type)
 
-        # 构建所有表的向量索引（如果尚未构建且未从磁盘加载）
+        # 构建所有表的向量索引（如果尚未构建且未从磁盘加载、或者有新的记录被添加）
         if VECTOR_SIMILARITY_AVAILABLE:
             for table in TABLE_PK_MAP.keys():
                 if table not in self.vector_indexes or self.vector_indexes[table][0] is None:
                     print(f"正在为表 {table} 构建向量索引...")
                     self.build_vector_index(table)
+            # 增量更新所有表的索引
+            updated = self.builder.update_all_indexes_incremental()
+            self.vector_indexes.update(updated)
 
         top_candidates = []
         column_table = {}

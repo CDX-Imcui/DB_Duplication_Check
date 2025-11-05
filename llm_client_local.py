@@ -9,12 +9,11 @@ from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
 load_dotenv()
-
 # --- 2. 从 .env 或使用你的本地路径加载模型 ---
 # (建议把这个路径 "F:\..." 也加入到 .env 文件中，例如 QWEN_MODEL_PATH=...)
 # 这里我们使用 'r' 来确保 Windows 路径被正确读取
-DEFAULT_MODEL_PATH = r"F:\Downloads\modelscope\models\Qwen\Qwen3-Reranker-0___6B"
-LOCAL_MODEL_PATH = os.getenv("LOCAL_MODEL_PATH", DEFAULT_MODEL_PATH)
+# DEFAULT_MODEL_PATH = r"F:\Downloads\modelscope\models\Qwen\Qwen3-Reranker-0___6B"
+LOCAL_MODEL_PATH = os.getenv("QWEN_MODEL_PATH")
 
 
 class LLMClient:
