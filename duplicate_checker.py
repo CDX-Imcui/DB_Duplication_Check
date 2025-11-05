@@ -215,6 +215,8 @@ class DuplicateChecker:
                         # 如果是目标数据本身，跳过（相似度最高的那条）
                         if table == target_type and records[idx][TABLE_PK_MAP[table]] == target_id:
                             continue
+                        if records[idx].get("__deleted__") is True:
+                            continue  # 跳过墓碑（应该被删除的记录）
                         scored_candidates.append((float(scores[0][i]) * 100, records[idx], table))
                 
                 # 合并到top_candidates中，并确保最多只有5个候选者
@@ -237,6 +239,7 @@ class DuplicateChecker:
                     if rough_scores:
                         avg_score = sum(rough_scores) / len(rough_scores)
                         scored_candidates.append((avg_score, candidate, table))
+                        print("表:", table, "候选ID:", candidate[TABLE_PK_MAP[table]], "粗筛得分:", avg_score)
 
                 # 获取前5个最相似的候选者
                 scored_candidates = sorted(scored_candidates, key=lambda x: x[0], reverse=True)[:5]

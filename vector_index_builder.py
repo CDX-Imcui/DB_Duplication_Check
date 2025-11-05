@@ -144,6 +144,19 @@ class VectorIndexBuilder:
         
         # 更新记录列表
         existing_records.extend(records_to_add)
+
+        # 标记删除：只改 records，不改 FAISS
+        pk_col = TABLE_PK_MAP[table]
+        new_ids = {str(r[pk_col]) for r in (new_records or [])}
+        deleted_cnt = 0
+        for i, r in enumerate(existing_records):
+            rid = r.get(pk_col) if isinstance(r, dict) else None
+            if rid is None:
+                continue
+            if str(rid) not in new_ids:
+                # 占位为“墓碑行”，保留主键，增加 __deleted__ 标记，不能删除元素因为要保持下标对齐
+                existing_records[i] = {pk_col: rid, "__deleted__": True}
+                deleted_cnt += 1
         
         # 保存更新后的索引和记录
         faiss.write_index(index, index_file)
