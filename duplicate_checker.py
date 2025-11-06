@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Dict, Any, List, Tuple
+import base64
 try:
     import faiss
     import numpy as np
@@ -31,7 +32,7 @@ class DuplicateChecker:
             # 存储每个表的向量索引
             self.vector_indexes: Dict[str, Tuple[faiss.Index, List[Dict[str, Any]]]] = {}
             # 尝试从磁盘加载向量索引
-            self._load_vector_indexes()
+            # self._load_vector_indexes()
         else:
             self.model = None
             self.vector_indexes = None
@@ -169,7 +170,36 @@ class DuplicateChecker:
                     self.build_vector_index(table)
             # 增量更新所有表的索引
             updated = self.builder.update_all_indexes_incremental()
-            self.vector_indexes.update(updated)
+            if updated is not None:
+                self.vector_indexes.update(updated)
+        # ##########################
+        # pass
+        # # 将每个表的完整索引与记录保存为txt（索引以base64文本形式保存）
+        # os.makedirs(self.index_dir, exist_ok=True)
+        # try:
+        #     for t, (idx, recs) in self.vector_indexes.items():
+        #         out_file = os.path.join(self.index_dir, f"{t}_index_full1.txt")
+        #         data = {"table": t, "index_base64": None, "records": recs}
+        #         if idx is not None:
+        #             try:
+        #                 idx_bytes = faiss.serialize_index(idx)
+        #                 data["index_base64"] = base64.b64encode(idx_bytes).decode("ascii")
+        #             except Exception as e:
+        #                 data["index_error"] = str(e)
+        #         try:
+        #             payload = json.dumps(data, ensure_ascii=False, indent=2)
+        #         except TypeError:
+        #             data_fallback = dict(data)
+        #             data_fallback["records"] = None
+        #             data_fallback["records_repr"] = repr(recs)
+        #             payload = json.dumps(data_fallback, ensure_ascii=False, indent=2)
+        #         with open(out_file, "w", encoding="utf-8") as f:
+        #             f.write(payload)
+        # except Exception as e:
+        #     err_file = os.path.join(self.index_dir, "vector_indexes_full_error.txt")
+        #     with open(err_file, "w", encoding="utf-8") as ef:
+        #         ef.write(str(e))
+        # ##########################
 
         target_record = self.db.get_record_by_id(target_type, target_id)
         if not target_record:
@@ -204,8 +234,8 @@ class DuplicateChecker:
                 target_embedding = self.model.encode([target_combined_text])
                 faiss.normalize_L2(target_embedding)
 
-                # 搜索最相似的6条记录（多搜索一条，后面会移除目标数据本身）
-                search_count = min(6, len(records))
+                # 搜索最相似的条记录（多搜索一条，后面会移除目标数据本身）
+                search_count = min(16, len(records))
                 scores, indices = index.search(target_embedding.astype(np.float32), search_count)
 
                 # 收集候选结果
@@ -218,9 +248,10 @@ class DuplicateChecker:
                         if records[idx].get("__deleted__") is True:
                             continue  # 跳过墓碑（应该被删除的记录）
                         scored_candidates.append((float(scores[0][i]) * 100, records[idx], table))
+                        # print("表:", table, "候选ID:", records[idx][TABLE_PK_MAP[table]], "粗筛得分:", float(scores[0][i]) * 100,"records[idx]",records[idx])
 
                 # 合并到top_candidates中，并确保最多只有5个候选者
-                top_candidates.extend(scored_candidates[:5])
+                top_candidates.extend(scored_candidates[:15])
             else:
                 # 原有逻辑：使用RapidFuzz
                 candidates = self.db.get_all_records(table)
@@ -244,9 +275,6 @@ class DuplicateChecker:
                 # 获取前5个最相似的候选者
                 scored_candidates = sorted(scored_candidates, key=lambda x: x[0], reverse=True)[:5]
                 top_candidates.extend(scored_candidates)
-
-        # 按相似度排序并取前5个
-        #top_candidates = sorted(top_candidates, key=lambda x: x[0], reverse=True)[:5]
 
         # 2️⃣ 再调用 LLM 做精细比对
         for _, candidate, table in top_candidates:
