@@ -13,7 +13,7 @@ class DBClient:
             host=host, port=port, user=user, password=password, db=db,
             read_timeout=600,  # <-- 增加这个
             write_timeout=600,  # <-- 增加这个
-            autocommit=True
+            autocommit=True  # 开启自动提交，避免长事务旧快照
         )
 
 
