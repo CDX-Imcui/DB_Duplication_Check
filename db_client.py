@@ -12,7 +12,8 @@ class DBClient:
         self.conn = pymysql.connect(
             host=host, port=port, user=user, password=password, db=db,
             read_timeout=600,  # <-- 增加这个
-            write_timeout=600  # <-- 增加这个
+            write_timeout=600,  # <-- 增加这个
+            autocommit=True
         )
 
 
@@ -34,8 +35,10 @@ class DBClient:
         text_cols = self.get_text_columns(table)
         cols = ",".join(text_cols)
         sql = f"SELECT {pk}, {cols} FROM {table} WHERE {pk} = %s"
+        self.conn.ping(reconnect=True)  # 保证连接有效
         with self.conn.cursor(pymysql.cursors.DictCursor) as cur:
             cur.execute(sql, (record_id,))
+            print("SQL:", sql)
             return cur.fetchone()
 
     def get_all_records(self, table: str) -> List[Dict[str, Any]]:

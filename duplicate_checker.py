@@ -203,6 +203,7 @@ class DuplicateChecker:
 
         target_record = self.db.get_record_by_id(target_type, target_id)
         if not target_record:
+            print("【get_record_by_id failed for", target_type, target_id)
             return {"code": 404, "msg": f"No record found in {target_type} with id={target_id}"}
         target_text_cols = self.db.get_text_columns(target_type)
 
