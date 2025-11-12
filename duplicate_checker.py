@@ -281,20 +281,35 @@ class DuplicateChecker:
         for _, candidate, table in top_candidates:
             alike_fields = {}
             scores = []
-            for col in column_table[table]:
-                target_val = target_record.get(col)
-                candidate_val = candidate.get(col)
-                if target_val and candidate_val:
-                    cmp_result = self.llm.compare_texts(str(target_val), str(candidate_val), col)
-                    score = cmp_result.get("score", 0)
-                    if score > 0:
-                        alike_fields[col] = {
-                            "target_content": target_val,
-                            "candidate_content": candidate_val,
-                            "score": score,
-                            "reason": cmp_result.get("reason", "无")
-                        }
-                    scores.append(cmp_result.get("score", 0))
+            # for col in column_table[table]:  # mainConsultContent
+            #     target_val = target_record.get(col)
+            #     candidate_val = candidate.get(col)
+            #     if target_val and candidate_val:
+            #         cmp_result = self.llm.compare_texts(str(target_val), str(candidate_val), col)
+            #         score = cmp_result.get("score", 0)
+            #         if score > 0:
+            #             alike_fields[col] = {
+            #                 "target_content": target_val,
+            #                 "candidate_content": candidate_val,
+            #                 "score": score,
+            #                 "reason": cmp_result.get("reason", "无")
+            #             }
+            #         scores.append(cmp_result.get("score", 0))
+            col = "mainConsultContent"
+            pass
+            target_val = target_record.get(col)
+            candidate_val = candidate.get(col)
+            if target_val and candidate_val:
+                cmp_result = self.llm.compare_texts(str(target_val), str(candidate_val), col)
+                score = cmp_result.get("score", 0)
+                if score > 0:
+                    alike_fields[col] = {
+                        "target_content": target_val,
+                        "candidate_content": candidate_val,
+                        "score": score,
+                        "reason": cmp_result.get("reason", "无")
+                    }
+                scores.append(cmp_result.get("score", 0))
 
             if scores:
                 avg_score = sum(scores) / len(scores)
